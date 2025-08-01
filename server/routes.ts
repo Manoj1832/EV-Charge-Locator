@@ -4,9 +4,11 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { insertVehicleSchema, insertChargingStationSchema } from "@shared/schema";
 import { NRELService } from "./nrel-api.js";
+import { OpenChargeMapService } from "./open-charge-map-api.js";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const nrelService = new NRELService();
+  const ocmService = new OpenChargeMapService();
   // Vehicle routes
   app.get("/api/vehicle/current", async (req, res) => {
     try {
@@ -34,7 +36,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Charging station routes - now using real NREL API data
+  // Charging station routes - hybrid approach using NREL for US and OCM for global
   app.get("/api/stations/:lat/:lng/:radius", async (req, res) => {
     try {
       const { lat, lng, radius } = req.params;
@@ -48,10 +50,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`Fetching real stations near ${latitude}, ${longitude} within ${radiusNum} miles`);
       
-      // Use NREL API for real-time, accurate data
-      const stations = await nrelService.getNearbyStations(latitude, longitude, radiusNum, 20);
+      // Determine if location is in US (roughly) for NREL API
+      const isUSLocation = latitude >= 24.0 && latitude <= 71.0 && longitude >= -179.0 && longitude <= -66.0;
       
-      console.log(`Found ${stations.length} real charging stations`);
+      let stations = [];
+      
+      if (isUSLocation) {
+        // Use NREL for US locations
+        stations = await nrelService.getNearbyStations(latitude, longitude, radiusNum, 20);
+        console.log(`NREL: Found ${stations.length} US stations`);
+      }
+      
+      // If no stations found or outside US, try Open Charge Map with expanded radius
+      if (stations.length === 0) {
+        const expandedRadiusKm = radiusNum * 3.2; // Convert miles to km and expand search
+        stations = await ocmService.getNearbyStations(latitude, longitude, expandedRadiusKm, 20);
+        console.log(`OCM: Found ${stations.length} global stations within ${expandedRadiusKm}km`);
+      }
+      
+      // If still no stations, try even larger radius
+      if (stations.length === 0) {
+        const veryLargeRadiusKm = 100; // 100km radius
+        stations = await ocmService.getNearbyStations(latitude, longitude, veryLargeRadiusKm, 20);
+        console.log(`OCM Extended: Found ${stations.length} stations within ${veryLargeRadiusKm}km`);
+      }
+      
       res.json(stations);
     } catch (error) {
       console.error('Error fetching stations:', error);
@@ -68,12 +91,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const longitude = parseFloat(lng as string);
         const radiusMiles = radius ? parseFloat(radius as string) : 25;
         
-        // Use NREL API for real data
-        const stations = await nrelService.getNearbyStations(latitude, longitude, radiusMiles, 20);
+        // Determine location and use appropriate API
+        const isUSLocation = latitude >= 24.0 && latitude <= 71.0 && longitude >= -179.0 && longitude <= -66.0;
+        
+        let stations = [];
+        if (isUSLocation) {
+          stations = await nrelService.getNearbyStations(latitude, longitude, radiusMiles, 20);
+        }
+        
+        if (stations.length === 0) {
+          const radiusKm = radiusMiles * 1.6; // Convert to km
+          stations = await ocmService.getNearbyStations(latitude, longitude, radiusKm, 20);
+        }
+        
         res.json(stations);
       } else {
-        // Fallback to default location (Seattle) for initial load
-        const stations = await nrelService.getNearbyStations(47.6062, -122.3321, 25, 20);
+        // Fallback to Open Charge Map global data for initial load
+        const stations = await ocmService.getNearbyStations(47.6062, -122.3321, 40, 20);
         res.json(stations);
       }
     } catch (error) {
