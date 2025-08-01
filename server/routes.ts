@@ -3,8 +3,10 @@ import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
 import { insertVehicleSchema, insertChargingStationSchema } from "@shared/schema";
+import { NRELService } from "./nrel-api.js";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  const nrelService = new NRELService();
   // Vehicle routes
   app.get("/api/vehicle/current", async (req, res) => {
     try {
@@ -32,7 +34,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Charging station routes
+  // Charging station routes - now using real NREL API data
+  app.get("/api/stations/:lat/:lng/:radius", async (req, res) => {
+    try {
+      const { lat, lng, radius } = req.params;
+      const latitude = parseFloat(lat);
+      const longitude = parseFloat(lng);
+      const radiusNum = parseFloat(radius);
+      
+      if (isNaN(latitude) || isNaN(longitude) || isNaN(radiusNum)) {
+        return res.status(400).json({ message: "Invalid coordinates or radius" });
+      }
+      
+      console.log(`Fetching real stations near ${latitude}, ${longitude} within ${radiusNum} miles`);
+      
+      // Use NREL API for real-time, accurate data
+      const stations = await nrelService.getNearbyStations(latitude, longitude, radiusNum, 20);
+      
+      console.log(`Found ${stations.length} real charging stations`);
+      res.json(stations);
+    } catch (error) {
+      console.error('Error fetching stations:', error);
+      res.status(500).json({ message: "Failed to get nearby stations" });
+    }
+  });
+
   app.get("/api/stations", async (req, res) => {
     try {
       const { lat, lng, radius } = req.query;
@@ -40,15 +66,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (lat && lng) {
         const latitude = parseFloat(lat as string);
         const longitude = parseFloat(lng as string);
-        const radiusMiles = radius ? parseFloat(radius as string) : 50;
+        const radiusMiles = radius ? parseFloat(radius as string) : 25;
         
-        const stations = await storage.getNearbyChargingStations(latitude, longitude, radiusMiles);
+        // Use NREL API for real data
+        const stations = await nrelService.getNearbyStations(latitude, longitude, radiusMiles, 20);
         res.json(stations);
       } else {
-        const stations = await storage.getChargingStations();
+        // Fallback to default location (Seattle) for initial load
+        const stations = await nrelService.getNearbyStations(47.6062, -122.3321, 25, 20);
         res.json(stations);
       }
     } catch (error) {
+      console.error('Error fetching stations:', error);
       res.status(500).json({ message: "Failed to get charging stations" });
     }
   });

@@ -130,23 +130,55 @@ export default function Dashboard() {
     }
   }, [vehicle, lowBatteryModalOpen, lastAlertBatteryLevel, toast]);
 
-  // Get user's current location
+  // Get user's current location with enhanced accuracy
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-        },
-        (error) => {
-          console.warn('Geolocation failed, using default location:', error);
-          // Use default Seattle location
-        }
-      );
-    }
-  }, []);
+    const getUserLocation = () => {
+      if (navigator.geolocation) {
+        // First try high accuracy GPS
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            console.log(`User location: ${position.coords.latitude}, ${position.coords.longitude}`);
+            setUserLocation({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+          },
+          (error) => {
+            console.warn('High accuracy geolocation failed:', error);
+            // Fallback to network-based location
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                console.log(`Fallback location: ${position.coords.latitude}, ${position.coords.longitude}`);
+                setUserLocation({
+                  latitude: position.coords.latitude,
+                  longitude: position.coords.longitude,
+                });
+              },
+              (fallbackError) => {
+                console.warn('All geolocation failed, using default Seattle location:', fallbackError);
+                toast({
+                  title: "Location Access Denied",
+                  description: "Using default location. Enable location access for better results.",
+                  variant: "default",
+                });
+              },
+              { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+            );
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        );
+      } else {
+        console.warn('Geolocation not supported');
+        toast({
+          title: "Location Not Supported",
+          description: "Your browser doesn't support location services. Using default location.",
+          variant: "default",
+        });
+      }
+    };
+
+    getUserLocation();
+  }, [toast]);
 
   const handleStationSelect = (station: ChargingStation) => {
     setSelectedStation(station);
