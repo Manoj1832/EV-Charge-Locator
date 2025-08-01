@@ -28,7 +28,15 @@ export default function LowBatteryModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg glass-effect animate-bounce-in">
+      <DialogContent className="max-w-lg glass-effect animate-bounce-in relative">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute top-4 right-4 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 z-10"
+          onClick={onClose}
+        >
+          <X className="h-4 w-4" />
+        </Button>
         <DialogHeader className="text-left">
           <DialogTitle className="sr-only">Low Battery Alert</DialogTitle>
           {/* Enhanced Alert Header */}
@@ -179,10 +187,11 @@ export default function LowBatteryModal({
             <Button 
               variant="ghost"
               size="sm"
-              className="flex-1 text-xs text-neutral-500 hover:text-neutral-700"
+              className="flex-1 text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
               onClick={onClose}
             >
-              Dismiss Alert
+              <X className="w-4 h-4 mr-1" />
+              Close
             </Button>
           </div>
         </div>

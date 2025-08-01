@@ -108,17 +108,27 @@ export default function Dashboard() {
     return stationsWithDistance.sort((a, b) => (a.distance || 0) - (b.distance || 0));
   }, [stations, filters, userLocation]);
 
-  // Check for low battery and show modal
+  // Check for low battery and show modal (only once per battery level change)
+  const [lastAlertBatteryLevel, setLastAlertBatteryLevel] = useState<number | null>(null);
+  
   useEffect(() => {
-    if (vehicle && vehicle.batteryLevel <= 30 && !lowBatteryModalOpen) {
+    if (vehicle && vehicle.batteryLevel <= 30 && 
+        !lowBatteryModalOpen && 
+        lastAlertBatteryLevel !== vehicle.batteryLevel) {
       setLowBatteryModalOpen(true);
+      setLastAlertBatteryLevel(vehicle.batteryLevel);
       toast({
         title: "Low Battery Alert",
         description: `Your battery is at ${vehicle.batteryLevel}%. Find a charging station nearby.`,
         variant: "destructive",
       });
     }
-  }, [vehicle, lowBatteryModalOpen, toast]);
+    
+    // Reset alert when battery goes above 30%
+    if (vehicle && vehicle.batteryLevel > 30 && lastAlertBatteryLevel !== null) {
+      setLastAlertBatteryLevel(null);
+    }
+  }, [vehicle, lowBatteryModalOpen, lastAlertBatteryLevel, toast]);
 
   // Get user's current location
   useEffect(() => {
@@ -151,7 +161,7 @@ export default function Dashboard() {
         description: `Navigating to ${nearestStation.name}`,
       });
       setLowBatteryModalOpen(false);
-      // In a real app, this would integrate with a navigation service
+      setLastAlertBatteryLevel(vehicle?.batteryLevel || null); // Prevent immediate reopening
     }
   };
 
@@ -168,8 +178,11 @@ export default function Dashboard() {
 
   const handleViewAllStations = () => {
     setLowBatteryModalOpen(false);
+    setLastAlertBatteryLevel(vehicle?.batteryLevel || null); // Prevent immediate reopening
     // Scroll to stations list
-    document.querySelector('[data-scroll-target="stations"]')?.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => {
+      document.querySelector('[data-scroll-target="stations"]')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
   const handleEmergencyFindStation = () => {
@@ -178,8 +191,15 @@ export default function Dashboard() {
 
   // Battery simulation mutation
   const batterySimulation = useMutation({
-    mutationFn: (batteryLevel: number) => 
-      apiRequest('/api/vehicle/simulate-battery', { method: 'POST', body: { batteryLevel } }),
+    mutationFn: async (batteryLevel: number) => {
+      const response = await fetch('/api/vehicle/simulate-battery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batteryLevel })
+      });
+      if (!response.ok) throw new Error('Failed to simulate battery');
+      return response.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/vehicle/current'] });
       toast({
@@ -258,7 +278,7 @@ export default function Dashboard() {
               stations={filteredStations}
               userLocation={userLocation}
               onStationSelect={handleStationSelect}
-              selectedStation={selectedStation}
+              selectedStation={selectedStation || undefined}
             />
           </div>
           
@@ -267,7 +287,7 @@ export default function Dashboard() {
             <StationList
               stations={filteredStations}
               onStationSelect={handleStationSelect}
-              selectedStation={selectedStation}
+              selectedStation={selectedStation || undefined}
             />
           </div>
         </div>
@@ -375,7 +395,7 @@ export default function Dashboard() {
         isOpen={lowBatteryModalOpen}
         onClose={() => setLowBatteryModalOpen(false)}
         vehicle={vehicle}
-        nearestStation={nearestAvailableStation}
+        nearestStation={nearestAvailableStation || undefined}
         onNavigateToStation={handleNavigateToStation}
         onViewAllStations={handleViewAllStations}
       />
