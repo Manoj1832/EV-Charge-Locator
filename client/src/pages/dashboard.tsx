@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { AlertCircle } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { AlertCircle, Zap, TrendingUp, TrendingDown, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import Header from "@/components/header";
 import BatteryStatus from "@/components/battery-status";
 import SearchFiltersComponent from "@/components/search-filters";
@@ -175,6 +176,44 @@ export default function Dashboard() {
     setLowBatteryModalOpen(true);
   };
 
+  // Battery simulation mutation
+  const batterySimulation = useMutation({
+    mutationFn: (batteryLevel: number) => 
+      apiRequest('/api/vehicle/simulate-battery', { method: 'POST', body: { batteryLevel } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/vehicle/current'] });
+      toast({
+        title: "Battery Level Updated",
+        description: "Vehicle battery level has been simulated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Simulation Failed",
+        description: "Unable to simulate battery level.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const simulateBatteryDrain = () => {
+    if (vehicle && vehicle.batteryLevel > 5) {
+      const newLevel = Math.max(5, vehicle.batteryLevel - 10);
+      batterySimulation.mutate(newLevel);
+    }
+  };
+
+  const simulateBatteryCharge = () => {
+    if (vehicle && vehicle.batteryLevel < 100) {
+      const newLevel = Math.min(100, vehicle.batteryLevel + 15);
+      batterySimulation.mutate(newLevel);
+    }
+  };
+
+  const resetBattery = () => {
+    batterySimulation.mutate(25); // Reset to initial low level
+  };
+
   if (vehicleLoading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-neutral-50">
@@ -201,10 +240,10 @@ export default function Dashboard() {
   const nearestAvailableStation = filteredStations.find(station => station.availablePorts > 0);
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-gradient-to-br from-neutral-50 to-neutral-100 dark:from-neutral-900 dark:to-neutral-800">
       <Header />
       
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <BatteryStatus vehicle={vehicle} />
         
         <SearchFiltersComponent 
@@ -214,7 +253,7 @@ export default function Dashboard() {
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Map Section */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 animate-slide-up">
             <ChargingMap
               stations={filteredStations}
               userLocation={userLocation}
@@ -224,7 +263,7 @@ export default function Dashboard() {
           </div>
           
           {/* Stations List */}
-          <div className="lg:col-span-1" data-scroll-target="stations">
+          <div className="lg:col-span-1 animate-slide-up" data-scroll-target="stations" style={{ animationDelay: '0.2s' }}>
             <StationList
               stations={filteredStations}
               onStationSelect={handleStationSelect}
@@ -234,13 +273,102 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Emergency Find Station FAB */}
-      <Button
-        className="fixed bottom-6 right-6 w-16 h-16 bg-ev-error hover:bg-red-600 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-105 z-40"
-        onClick={handleEmergencyFindStation}
-      >
-        <AlertCircle className="h-6 w-6" />
-      </Button>
+      {/* Enhanced Floating Action Buttons */}
+      <div className="fixed bottom-6 right-6 z-40">
+        {/* Battery Simulation Controls */}
+        <div className="flex flex-col space-y-3 mb-4">
+          <Button
+            size="sm"
+            className="w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-105"
+            onClick={simulateBatteryCharge}
+            disabled={batterySimulation.isPending || !vehicle || vehicle.batteryLevel >= 100}
+            title="Simulate Battery Charge (+15%)"
+          >
+            <TrendingUp className="h-5 w-5" />
+          </Button>
+          
+          <Button
+            size="sm"
+            className="w-12 h-12 bg-orange-600 hover:bg-orange-700 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-105"
+            onClick={simulateBatteryDrain}
+            disabled={batterySimulation.isPending || !vehicle || vehicle.batteryLevel <= 5}
+            title="Simulate Battery Drain (-10%)"
+          >
+            <TrendingDown className="h-5 w-5" />
+          </Button>
+          
+          <Button
+            size="sm"
+            className="w-12 h-12 bg-gray-600 hover:bg-gray-700 text-white rounded-full shadow-lg transition-all duration-300 hover:scale-105"
+            onClick={resetBattery}
+            disabled={batterySimulation.isPending}
+            title="Reset to Low Battery (25%)"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Emergency Find Station FAB */}
+        <Button
+          className="w-16 h-16 gradient-error text-white rounded-full shadow-lg transition-all duration-300 hover:scale-105 animate-bounce-in"
+          onClick={handleEmergencyFindStation}
+        >
+          <AlertCircle className="h-6 w-6" />
+        </Button>
+      </div>
+
+      {/* Enhanced Footer */}
+      <footer className="bg-white dark:bg-neutral-800 mt-12 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <div className="w-8 h-8 gradient-primary rounded-lg flex items-center justify-center">
+                  <Zap className="text-white h-4 w-4" />
+                </div>
+                <h3 className="text-lg font-bold text-neutral-900 dark:text-white">EVCharge</h3>
+              </div>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                Smart EV battery monitoring with real-time alerts and charging station finder.
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-neutral-900 dark:text-white mb-3">Features</h4>
+              <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+                <li>• Real-time battery monitoring</li>
+                <li>• Low battery alerts</li>
+                <li>• Nearby station finder</li>
+                <li>• Live availability status</li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-neutral-900 dark:text-white mb-3">Status</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-ev-success rounded-full"></div>
+                  <span className="text-neutral-600 dark:text-neutral-400">System Online</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-ev-success rounded-full"></div>
+                  <span className="text-neutral-600 dark:text-neutral-400">Stations Updated</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-ev-success rounded-full"></div>
+                  <span className="text-neutral-600 dark:text-neutral-400">Vehicle Connected</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="border-t border-neutral-200 dark:border-neutral-700 mt-8 pt-8 text-center">
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              © 2024 EVCharge. Built with React, TypeScript & TailwindCSS
+            </p>
+          </div>
+        </div>
+      </footer>
 
       {/* Modals */}
       <LowBatteryModal
